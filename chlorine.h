@@ -44,7 +44,7 @@ void __cl_env_init(__CLSpecEnv* env) {
   env->failed = false;
   env->test_name = NULL;
   env->output_buffer = malloc(16);
-  env->output_buffer = '\0';
+  env->output_buffer[0] = '\0';
   env->num_failed_asserts = 0;
   env->num_passed_asserts = 0;
 }

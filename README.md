@@ -30,7 +30,7 @@ A more stable molecule.
   
 ##Quickstart
 
-1. First grab a copy of [chlorine.h](https://raw.githubusercontent.com/pyrated/chlorine/master/chlorine.h) and add it somewhere easily accessible in your project.
+1. First grab a copy of [chlorine.h](https://github.com/pyrated/chlorine/blob/master/chlorine.h) and add it somewhere easily accessible in your project.
 
 2. Create a new file to house a test bundle. For example: "my_tests.c"
  

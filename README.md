@@ -12,21 +12,21 @@ A more stable molecule.
   
 ##Features
   
-  â˜‘ Test suites (Use chlorine bundles)
+  ☑ Test suites (Use chlorine bundles)
 
-  â˜‘ Tests run on seperate threads **(New in Cl<sub>2</sub>)**
+  ☑ Tests run on seperate threads **(New in Cl<sub>2</sub>)**
   
-  â˜ Test pooling
+  ☐ Test pooling
   
-  â˜‘ Non-fatal assertions **(New in Cl<sub>2</sub>)**
+  ☑ Non-fatal assertions **(New in Cl<sub>2</sub>)**
   
-  â˜‘ Re-entrant assertions **(New in Cl<sub>2</sub>)**
+  ☑ Re-entrant assertions **(New in Cl<sub>2</sub>)**
   
-  â˜‘ Re-entrant Logging and timing **(New in Cl<sub>2</sub>)**
+  ☑ Re-entrant Logging and timing **(New in Cl<sub>2</sub>)**
 
-  â˜ Test timeouts
+  ☐ Test timeouts
     
-  â˜ Test fixtures
+  ☐ Test fixtures
   
 ##Quickstart
 

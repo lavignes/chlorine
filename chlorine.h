@@ -42,7 +42,7 @@ typedef struct __CLSpecEnv {
 typedef enum CLOptions {
   CL_OPTION_NONE          = 0 << 0,
   CL_OPTION_SKIP_SETUP    = 1 << 0,
-  CL_OPTION_SKIP_TEARDOWN = 1 << 0,
+  CL_OPTION_SKIP_TEARDOWN = 2 << 0,
 } CLOptions;
 
 typedef void* (*__CLSpecType)();

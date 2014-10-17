@@ -543,7 +543,7 @@ outputs:
 
 [INFO] Executing SPEC => fails_skips_teardown
 
-        [ERROR] Assertion Failed: false in libtofu/tests/tofu_runtime_tests.c:5
+        [ERROR] Assertion Failed: false in tests.c:5
                 false
 
         [FAIL]  Failed SPEC in 0.0000 s -> 1 fail, 0 pass

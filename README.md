@@ -485,6 +485,80 @@ output:
 [SUCCESS] 0 SPECS failed, 1 SPECS passed in 0.0001 s
 ```
 
+##Spec configuration
+
+You can also define specs with special options using **CL_SPEC_OPTIONS**. Two handy option flags are **CL_OPTION_SKIP_SETUP**, and **CL_OPTION_SKIP_TEARDOWN**. When a spec is created with these flags it will do as you expect, skip setup or teardown:
+
+```c
+#include <stdbool.h>
+#include "chlorine.h"
+
+CL_SETUP {
+  cl_assert(false, "false");
+}
+
+CL_TEARDOWN {
+  cl_assert(true, "true");
+}
+
+CL_SPEC (fails_inherits_setup) { }
+
+CL_SPEC_OPTIONS (fails_no_tests,
+  CL_OPTION_SKIP_SETUP | CL_OPTION_SKIP_TEARDOWN) {
+  cl_log("no tests");
+}
+
+CL_SPEC_OPTIONS (fails_skips_teardown, CL_OPTION_SKIP_TEARDOWN) { }
+
+CL_SPEC_OPTIONS (passes_skips_setup, CL_OPTION_SKIP_SETUP) { }
+
+CL_BUNDLE (
+  fails_inherits_setup,
+  fails_no_tests,
+  fails_skips_teardown,
+  passes_skips_setup
+);
+```
+
+outputs:
+
+```
+[INFO] Running BUNDLE: tests.c
+
+[INFO] Executing SPEC => fails_inherits_setup
+
+        [ERROR] Assertion Failed: false in tests.c:5
+                false
+
+        [FAIL]  Failed SPEC in 0.0000 s -> 1 fail, 1 pass
+
+======================================================
+
+[INFO] Executing SPEC => fails_no_tests
+
+        [LOG]   no tests
+        [FAIL]  Failed SPEC in 0.0000 s -> 0 fail, 0 pass
+
+======================================================
+
+[INFO] Executing SPEC => fails_skips_teardown
+
+        [ERROR] Assertion Failed: false in libtofu/tests/tofu_runtime_tests.c:5
+                false
+
+        [FAIL]  Failed SPEC in 0.0000 s -> 1 fail, 0 pass
+
+======================================================
+
+[INFO] Executing SPEC => passes_skips_setup
+
+        [PASS]  Passed SPEC in 0.0000 s -> 0 fail, 1 pass
+
+======================================================
+
+[FAILURE] 3 SPECS failed, 1 SPECS passed in 0.0003 s
+```
+
 ##Other Stuff
 
 Im still working on this as I expand it for use in my own projects. It is actually now pretty usable.

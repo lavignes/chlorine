@@ -474,7 +474,7 @@ output:
 ```
 [INFO] Running PARALLEL BUNDLE: bad_test.c
 
-[ERROR] Detecting call to cl_log() from outside the scope of a SPEC at libtofu/tests/tofu_runtime_tests.c:41
+[ERROR] Detecting call to cl_log() from outside the scope of a SPEC at bad_test.c:6
 
 [INFO] Executing SPEC => cant_fail
 

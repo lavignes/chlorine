@@ -24,9 +24,9 @@ A more stable molecule.
   
   ☑ Re-entrant Logging and timing **(New in Cl<sub>2</sub>)**
 
+  ☑ Test fixtures
+
   ☐ Test timeouts
-    
-  ☐ Test fixtures
   
 ##Quickstart
 
@@ -254,6 +254,236 @@ outputs:
 ```
 
 The tests now only take as long as the slowest spec. All tests are running in parallel but **the logging order is still retained**! Each spec logs to thread-local storage and the log order is resolved in real time as the tests complete!
+
+##Fixtures and Parallelism
+
+Sometimes you need to have some common setup and teardown code for each test spec. Imagine this scenario:
+
+```c
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "chlorine.h"
+
+typedef struct TestData {
+  int number;
+  char* allocated_blob;
+} TestData;
+
+void setup_testdata(TestData* testdata) {
+  testdata->number = 0;
+  testdata->allocated_blob = strdup("malloc");
+  cl_assert(testdata->allocated_blob, "malloc works!");
+}
+
+void cleanup_testdata(TestData* testdata) {
+  free(testdata->allocated_blob);
+}
+
+CL_SPEC (thing) {
+  TestData td;
+  setup_testdata(&td);
+  cl_assert(td.number == 0, "must be zero");
+  td.number += 1;
+  cleanup_testdata(&td);
+}
+
+CL_SPEC (thing2) {
+  TestData td;
+  setup_testdata(&td);
+  cl_assert(td.number == 0, "must be zero");
+  td.number += 2;
+  cleanup_testdata(&td);
+}
+
+CL_SPEC (thing3) {
+  TestData td;
+  setup_testdata(&td);
+  cl_assert(td.number == 0, "must be zero");
+  td.number += 3; 
+  cleanup_testdata(&td);
+}
+
+CL_BUNDLE (
+  thing, thing2, thing3,
+);
+```
+
+Each spec has tons of repeated setup code. We can simply this with fixtures. Here's an example using **CL_SETUP** and **CL_TEARDOWN**:
+
+```c
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "chlorine.h"
+
+typedef struct TestData {
+  int number;
+  char* allocated_blob;
+} TestData;
+
+TestData td;
+
+CL_SETUP {
+  td.number = 0;
+  td.allocated_blob = strdup("malloc");
+  cl_assert(td.allocated_blob, "malloc works!");
+}
+
+CL_TEARDOWN {
+  free(td.allocated_blob);
+}
+
+CL_SPEC (thing) {
+  td.number += 1;
+}
+
+CL_SPEC (thing2) {
+  td.number += 2;
+}
+
+CL_SPEC (thing3) {
+  td.number += 3; 
+}
+
+CL_BUNDLE (
+  thing, thing2, thing3,
+);
+```
+
+Here **CL_SETUP** and **CL_TEARDOWN** act like functions that are run at the beginning and end of each SPEC. They still continue to work like functions called from a spec, allowing you to call **cl_assert** for example.
+
+But we can't safely run this in parallel... The global variable **td** that we factored out could be modified by each SPEC if we were running them all at once. We can solve this problem with **cl_set_userdata** and **cl_get_userdata**:
+
+```c
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "chlorine.h"
+
+typedef struct TestData {
+  int number;
+  char* allocated_blob;
+} TestData;
+
+CL_SETUP {
+  TestData* td = malloc(sizeof(TestData));
+  td->number = 0;
+  td->allocated_blob = strdup("malloc");
+  cl_assert(td->allocated_blob, "malloc works!");
+  cl_set_userdata(td);
+}
+
+CL_TEARDOWN {
+  TestData *td = cl_get_userdata();
+  free(td->allocated_blob);
+  free(td);
+}
+
+CL_SPEC (thing) {
+  TestData *td = cl_get_userdata();
+  td->number += 1;
+}
+
+CL_SPEC (thing2) {
+  TestData *td = cl_get_userdata();
+  td->number += 2;
+}
+
+CL_SPEC (thing3) {
+  TestData *td = cl_get_userdata();
+  td->number += 3; 
+}
+
+CL_BUNDLE_PARALLEL (
+  thing, thing2, thing3,
+);
+```
+
+Now we can run in parallel! **cl_set_userdata** and **cl_get_userdata** allow you to access a special pointer that is unique for each running thread. But if you want to set up some immutable shared data for all of your specs, then you can use the very awesome **CL_SETUP_ONCE** and **CL_TEARDOWN_ONCE**:
+
+```c
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "chlorine.h"
+
+typedef struct TestData {
+  int number;
+  char* allocated_blob;
+} TestData;
+
+TestData td;
+
+CL_SETUP_ONCE {
+  td.number = 42;
+  td.allocated_blob = strdup("malloc");
+}
+
+CL_TEARDOWN_ONCE {
+  free(td.allocated_blob);
+}
+
+CL_SETUP {
+  cl_assert(td.number == 42, "shared test");
+}
+
+CL_SPEC (thing) {
+  cl_log("%s %d", td.allocated_blob, td.number + 1);
+}
+
+CL_SPEC (thing2) {
+  cl_log("%s %d", td.allocated_blob, td.number + 2);
+}
+
+CL_SPEC (thing3) {
+  cl_log("%s %d", td.allocated_blob, td.number + 3);
+}
+
+CL_BUNDLE_PARALLEL (
+  thing, thing2, thing3,
+);
+```
+
+**CL_SETUP_ONCE** and **CL_TEARDOWN_ONCE** run exactly as you would expect, only once! It is important to note that **CL_SETUP_ONCE** and **CL_TEARDOWN_ONCE** are not part of a SPEC. You cannot call methods like **cl_assert**, **cl_log**, or **cl_get_userdata** because they are not ran as part of the test. They are just initial setup and teardown. If you do accidently call those functions, Chlorine will display a message with some helpful info and try to abort the test:
+
+```c
+#include <stdbool.h>
+
+#include "chlorine.h"
+
+CL_SETUP_ONCE {
+  cl_log("Logging once...");
+}
+
+CL_SPEC (cant_fail) {
+  cl_assert(true, "yes");
+}
+
+CL_BUNDLE_PARALLEL (
+  cant_fail,
+);
+```
+
+output:
+
+```
+[INFO] Running PARALLEL BUNDLE: bad_test.c
+
+[ERROR] Detecting call to cl_log() from outside the scope of a SPEC at libtofu/tests/tofu_runtime_tests.c:41
+
+[INFO] Executing SPEC => cant_fail
+
+        [PASS]  Passed SPEC in 0.0000 s -> 0 fail, 1 pass
+
+======================================================
+
+[SUCCESS] 0 SPECS failed, 1 SPECS passed in 0.0001 s
+```
 
 ##Other Stuff
 

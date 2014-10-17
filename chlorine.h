@@ -31,6 +31,7 @@
 pthread_key_t __CLEnvKey;
 
 typedef struct __CLSpecEnv {
+  void* userdata;
   bool failed;
   char* test_name;
   char* output_buffer;
@@ -39,8 +40,15 @@ typedef struct __CLSpecEnv {
 } __CLSpecEnv;
 
 typedef void* (*__CLSpecType)();
+typedef void (*__CLSetupType)();
+
+__CLSetupType __cl_setup;
+__CLSetupType __cl_teardown;
+__CLSetupType __cl_setup_once;
+__CLSetupType __cl_teardown_once;
 
 void __cl_env_init(__CLSpecEnv* env) {
+  env->userdata = NULL;
   env->failed = false;
   env->test_name = NULL;
   env->output_buffer = malloc(16);
@@ -78,6 +86,28 @@ void __cl_print(const char* format, ...) {
   va_start (args, format);
   vfprintf(stderr, format, args);
   va_end(args);
+}
+
+void* cl_get_userdata() {
+  __CLSpecEnv* env = __cl_env();
+  if (!env) {
+    __cl_print(__CL_BOLD __CL_FG(__CL_YELLOW) "[ERROR] " __CL_RESET
+               "Detecting call to cl_get_userdata() from outside the scope "
+               "of a SPEC\n\n");
+    return NULL;
+  }
+  return env->userdata;
+}
+
+void cl_set_userdata(void* userdata) {
+  __CLSpecEnv* env = __cl_env();
+  if (!env) {
+    __cl_print(__CL_BOLD __CL_FG(__CL_YELLOW) "[ERROR] " __CL_RESET
+               "Detecting call to cl_set_userdata() from outside the scope "
+               "of a SPEC\n\n");
+    return;
+  }
+  env->userdata = userdata;
 }
 
 void __cl_info(const char* format, ...) {
@@ -127,22 +157,39 @@ double __cl_time() {
   return (double) t.tv_sec + t.tv_usec / 1000000.0;
 }
 
-#define cl_log(format, ...) __cl_log(format, ##__VA_ARGS__)
+#define cl_log(format, ...)                                                  \
+do {                                                                         \
+  if (!__cl_env()) {                                                         \
+        __cl_print(__CL_BOLD __CL_FG(__CL_YELLOW) "[ERROR] " __CL_RESET      \
+               "Detecting call to cl_log() from outside the scope "          \
+               "of a SPEC at %s:%d\n\n", __FILE__, __LINE__);                \
+    return;                                                                  \
+  }                                                                          \
+  __cl_log(format, ##__VA_ARGS__);                                           \
+} while (0)                                                                  \
 
 #define cl_abort()                                                           \
 do {                                                                         \
   __CLSpecEnv* env = __cl_env();                                             \
+  if (!env) {                                                                \
+    __cl_print(__CL_BOLD __CL_FG(__CL_YELLOW) "[ERROR] " __CL_RESET          \
+               "Detecting call to cl_abort() from outside the scope "        \
+               "of a SPEC at %s:%d\n\n", __FILE__, __LINE__);                \
+  }                                                                          \
   env->failed = true;                                                        \
   __cl_fail("Aborted\n\n");                                                  \
   __cl_append("======================================================\n\n"); \
   pthread_exit(NULL);                                                        \
-} while(0);                                                                  \
-
+} while(0)                                                                   \
 
 #define cl_assert(test, format, ...)                                         \
 do {                                                                         \
   __CLSpecEnv* env = __cl_env();                                             \
-  if (!(test)) {                                                             \
+  if (!env) {                                                                \
+    __cl_print(__CL_BOLD __CL_FG(__CL_YELLOW) "[ERROR] " __CL_RESET          \
+               "Detecting call to cl_assert() from outside the scope "       \
+               "of a SPEC at %s:%d\n\n", __FILE__, __LINE__);                \
+  } else if (!(test)) {                                                      \
     env->num_failed_asserts++;                                               \
     /* Log the assert failure */                                             \
     __cl_error("Assertion Failed: " __CL_FG(__CL_RED) __CL_BOLD              \
@@ -154,7 +201,27 @@ do {                                                                         \
   } else {                                                                   \
     env->num_passed_asserts++;                                               \
   }                                                                          \
-} while(0);                                                                  \
+} while(0)                                                                   \
+
+#define CL_SETUP                                                             \
+void __cl_setup_impl();                                                      \
+__CLSetupType __cl_setup = __cl_setup_impl;                                  \
+void __cl_setup_impl()                                                       \
+
+#define CL_TEARDOWN                                                          \
+void __cl_teardown_impl();                                                   \
+__CLSetupType __cl_teardown = __cl_teardown_impl;                            \
+void __cl_teardown_impl()                                                    \
+
+#define CL_SETUP_ONCE                                                        \
+void __cl_setup_once_impl();                                                 \
+__CLSetupType __cl_setup_once = __cl_setup_once_impl;                        \
+void __cl_setup_once_impl()                                                  \
+
+#define CL_TEARDOWN_ONCE                                                     \
+void __cl_teardown_once_impl();                                              \
+__CLSetupType __cl_teardown_once = __cl_teardown_once_impl;                  \
+void __cl_teardown_once_impl()                                               \
 
 #define CL_SPEC(name)                                                        \
 void __cl_spec_##name ();                                                    \
@@ -165,7 +232,13 @@ void* name (void* data) {                                                    \
   __cl_info("Executing SPEC => " __CL_FG(__CL_CYAN) __CL_BOLD                \
             "%s\n\n" __CL_RESET, #name);                                     \
   double time_start = __cl_time();                                           \
+  if (__cl_setup) {                                                          \
+    __cl_setup();                                                            \
+  }                                                                          \
   __cl_spec_##name ();                                                       \
+  if (__cl_teardown) {                                                       \
+    __cl_teardown();                                                         \
+  }                                                                          \
   double elapsed = __cl_time() - time_start;                                 \
   size_t passed = env->num_passed_asserts;                                   \
   size_t failed = env->num_failed_asserts;                                   \
@@ -197,6 +270,9 @@ int __cl_main_parallel(
   double time_start = __cl_time();
   __cl_print(__CL_BOLD __CL_FG(__CL_CYAN) "[INFO] " __CL_RESET
              "Running PARALLEL BUNDLE: %s\n\n", filename);
+  if (__cl_setup_once) {
+    __cl_setup_once();
+  }
   /* TODO: Use a simple thread pool */
   pthread_t* threads = malloc(sizeof(pthread_t) * num_specs);
   __CLSpecEnv* envs = malloc(sizeof(__CLSpecEnv) * num_specs);
@@ -217,6 +293,9 @@ int __cl_main_parallel(
   }
   free(threads);
   free(envs);
+  if (__cl_teardown_once) {
+    __cl_teardown_once();
+  }
   size_t passed = num_specs - failed;
   double elapsed = __cl_time() - time_start;
   if (failed > 0) {
@@ -243,6 +322,9 @@ int __cl_main(
   double time_start = __cl_time();
   __cl_print(__CL_BOLD __CL_FG(__CL_CYAN) "[INFO] " __CL_RESET
              "Running BUNDLE: %s\n\n", filename);
+  if (__cl_setup_once) {
+    __cl_setup_once();
+  }
   pthread_t thread;
   __CLSpecEnv env;
   for (i = 0; i < num_specs; i++) {
@@ -256,6 +338,9 @@ int __cl_main(
         failed++;
       }
     }
+  }
+  if (__cl_teardown_once) {
+    __cl_teardown_once();
   }
   size_t passed = num_specs - failed;
   double elapsed = __cl_time() - time_start;

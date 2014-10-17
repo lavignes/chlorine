@@ -39,6 +39,12 @@ typedef struct __CLSpecEnv {
   size_t num_passed_asserts;
 } __CLSpecEnv;
 
+typedef enum CLOptions {
+  CL_OPTION_NONE          = 0 << 0,
+  CL_OPTION_SKIP_SETUP    = 1 << 0,
+  CL_OPTION_SKIP_TEARDOWN = 1 << 0,
+} CLOptions;
+
 typedef void* (*__CLSpecType)();
 typedef void (*__CLSetupType)();
 
@@ -223,39 +229,55 @@ void __cl_teardown_once_impl();                                              \
 __CLSetupType __cl_teardown_once = __cl_teardown_once_impl;                  \
 void __cl_teardown_once_impl()                                               \
 
+void* __cl_spec(
+  const char* name,
+  __CLSetupType spec,
+  __CLSpecEnv* env,
+  CLOptions options)
+{
+  env->test_name = (char *) name;
+  pthread_setspecific(__CLEnvKey, env);
+  __cl_info("Executing SPEC => " __CL_FG(__CL_CYAN) __CL_BOLD
+            "%s\n\n" __CL_RESET, name);
+  double time_start = __cl_time();
+  if (!(options & CL_OPTION_SKIP_SETUP) && __cl_setup) {
+    __cl_setup();
+  }
+  spec();
+  if (!(options & CL_OPTION_SKIP_TEARDOWN) && __cl_teardown) {
+    __cl_teardown();
+  }
+  double elapsed = __cl_time() - time_start;
+  size_t passed = env->num_passed_asserts;
+  size_t failed = env->num_failed_asserts;
+  if (passed > 0 && failed == 0) {
+    __cl_pass("Passed SPEC in %.4f s -> " __CL_FG(__CL_RED) "%zu fail"
+      __CL_RESET ", " __CL_FG(__CL_GREEN) "%zu pass" __CL_RESET "\n\n",
+      elapsed, failed, passed);
+  } else {
+    env->failed = true;
+    __cl_fail("Failed SPEC in %.4f s -> " __CL_FG(__CL_RED) "%zu fail"
+      __CL_RESET ", " __CL_FG(__CL_GREEN) "%zu pass" __CL_RESET "\n\n",
+      elapsed, failed, passed);
+  }
+  __cl_append("======================================================\n\n");
+  return NULL;
+}
+
 #define CL_SPEC(name)                                                        \
 void __cl_spec_##name ();                                                    \
-void* name (void* data) {                                                    \
-  __CLSpecEnv* env = (__CLSpecEnv*) data;                                    \
-  env->test_name = #name;                                                    \
-  pthread_setspecific(__CLEnvKey, env);                                      \
-  __cl_info("Executing SPEC => " __CL_FG(__CL_CYAN) __CL_BOLD                \
-            "%s\n\n" __CL_RESET, #name);                                     \
-  double time_start = __cl_time();                                           \
-  if (__cl_setup) {                                                          \
-    __cl_setup();                                                            \
-  }                                                                          \
-  __cl_spec_##name ();                                                       \
-  if (__cl_teardown) {                                                       \
-    __cl_teardown();                                                         \
-  }                                                                          \
-  double elapsed = __cl_time() - time_start;                                 \
-  size_t passed = env->num_passed_asserts;                                   \
-  size_t failed = env->num_failed_asserts;                                   \
-  if (passed > 0 && failed == 0) {                                           \
-    __cl_pass("Passed SPEC in %.4f s -> " __CL_FG(__CL_RED) "%zu fail"       \
-      __CL_RESET ", " __CL_FG(__CL_GREEN) "%zu pass" __CL_RESET "\n\n",      \
-      elapsed, failed, passed);                                              \
-  } else {                                                                   \
-    env->failed = true;                                                      \
-    __cl_fail("Failed SPEC in %.4f s -> " __CL_FG(__CL_RED) "%zu fail"       \
-      __CL_RESET ", " __CL_FG(__CL_GREEN) "%zu pass" __CL_RESET "\n\n",      \
-      elapsed, failed, passed);                                              \
-  }                                                                          \
-  __cl_append("======================================================\n\n"); \
-  return NULL;                                                               \
+void* name (__CLSpecEnv* env) {                                              \
+  return __cl_spec(#name, __cl_spec_##name, env, CL_OPTION_NONE);            \
 }                                                                            \
 void __cl_spec_##name ()                                                     \
+
+#define CL_SPEC_OPTIONS(name, options)                                       \
+void __cl_spec_##name ();                                                    \
+void* name (__CLSpecEnv* env) {                                              \
+  return __cl_spec(#name, __cl_spec_##name, env, options);                   \
+}                                                                            \
+void __cl_spec_##name ()                                                     \
+
 
 int __cl_main_parallel(
   int argc,

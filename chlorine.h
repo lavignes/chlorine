@@ -292,15 +292,22 @@ void* __cl_spec(
   return NULL;
 }
 
+__CLSetupType __cl_fixture_CL_FIXTURE_NONE = NULL;
+
+#define CL_FIXTURE(name)                                                     \
+void __cl_fixture_##name ()                                                  \
+
 #define CL_SPEC_FIXTURE_OPTIONS(name, setup, teardown, options)              \
 void __cl_spec_##name ();                                                    \
 void* name (__CLSpecEnv* env) {                                              \
-  return __cl_spec(#name, __cl_spec_##name, env, setup, teardown, options);  \
+  return __cl_spec(#name, __cl_spec_##name, env,                             \
+                   __cl_fixture_##setup,                                     \
+                   __cl_fixture_##teardown, options);                        \
 }                                                                            \
 void __cl_spec_##name ()                                                     \
 
 #define CL_SPEC_OPTIONS(name, options)                                       \
-CL_SPEC_FIXTURE_OPTIONS(name, NULL, NULL, options)                           \
+CL_SPEC_FIXTURE_OPTIONS(name, CL_FIXTURE_NONE, CL_FIXTURE_NONE, options)     \
 
 #define CL_SPEC_FIXTURE(name, setup, teardown)                               \
 CL_SPEC_FIXTURE_OPTIONS(name, setup, teardown, CL_OPTION_NONE)               \

@@ -297,6 +297,9 @@ __CLSetupType __cl_fixture_CL_FIXTURE_NONE = NULL;
 #define CL_FIXTURE(name)                                                     \
 void __cl_fixture_##name ()                                                  \
 
+#define CL_CALL_FIXTURE(name)                                                \
+__cl_fixture_##name()                                                        \
+
 #define CL_SPEC_FIXTURE_OPTIONS(name, setup, teardown, options)              \
 void __cl_spec_##name ();                                                    \
 void* name (__CLSpecEnv* env) {                                              \

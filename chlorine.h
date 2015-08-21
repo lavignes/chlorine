@@ -253,6 +253,8 @@ void* __cl_spec(
   const char* name,
   __CLSetupType spec,
   __CLSpecEnv* env,
+  __CLSetupType setup,
+  __CLSetupType teardown,
   CLOptions options)
 {
   env->test_name = (char *) name;
@@ -263,7 +265,13 @@ void* __cl_spec(
   if (!(options & CL_OPTION_SKIP_SETUP) && __cl_setup) {
     __cl_setup();
   }
+  if (setup) {
+    setup();
+  }
   spec();
+  if (teardown) {
+    teardown();
+  }
   if (!(options & CL_OPTION_SKIP_TEARDOWN) && __cl_teardown) {
     __cl_teardown();
   }
@@ -287,16 +295,7 @@ void* __cl_spec(
 #define CL_SPEC_FIXTURE_OPTIONS(name, setup, teardown, options)              \
 void __cl_spec_##name ();                                                    \
 void* name (__CLSpecEnv* env) {                                              \
-  __CLSetupType __cl_inner_setup = setup;                                    \
-  if (__cl_inner_setup) {                                                    \
-    __cl_inner_setup();                                                      \
-  }                                                                          \
-  void* value = __cl_spec(#name, __cl_spec_##name, env, options);            \
-  __CLSetupType __cl_inner_teardown = teardown;                              \
-  if (__cl_inner_teardown) {                                                 \
-    __cl_inner_teardown();                                                   \
-  }                                                                          \
-  return value;                                                              \
+  return __cl_spec(#name, __cl_spec_##name, env, setup, teardown, options);  \
 }                                                                            \
 void __cl_spec_##name ()                                                     \
 

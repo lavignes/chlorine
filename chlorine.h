@@ -12,21 +12,39 @@
 #include <stdarg.h>
 #include <string.h>
 
-#define __CL_RESET "\x1B[0m"
-#define __CL_BOLD "\x1B[1m"
-#define __CL_UL "\x1B[4m"
-#define __CL_TAB "        "
+#ifndef CHLORINE_NO_COLORS
+  #define __CL_RESET "\x1B[0m"
+  #define __CL_BOLD "\x1B[1m"
+  #define __CL_UL "\x1B[4m"
+  #define __CL_TAB "        "
 
-#define __CL_BLACK "0"
-#define __CL_RED "1"
-#define __CL_GREEN "2"
-#define __CL_YELLOW "3"
-#define __CL_BLUE "4"
-#define __CL_MAGENTA "5"
-#define __CL_CYAN "6"
-#define __CL_WHITE "7"
-#define __CL_FG(color) "\x1B[3"color"m"
-#define __CL_BG(color) "\x1B[4"color"m"
+  #define __CL_BLACK "0"
+  #define __CL_RED "1"
+  #define __CL_GREEN "2"
+  #define __CL_YELLOW "3"
+  #define __CL_BLUE "4"
+  #define __CL_MAGENTA "5"
+  #define __CL_CYAN "6"
+  #define __CL_WHITE "7"
+  #define __CL_FG(color) "\x1B[3"color"m"
+  #define __CL_BG(color) "\x1B[4"color"m"
+#else
+  #define __CL_RESET ""
+  #define __CL_BOLD ""
+  #define __CL_UL ""
+  #define __CL_TAB "        "
+
+  #define __CL_BLACK ""
+  #define __CL_RED ""
+  #define __CL_GREEN ""
+  #define __CL_YELLOW ""
+  #define __CL_BLUE ""
+  #define __CL_MAGENTA ""
+  #define __CL_CYAN ""
+  #define __CL_WHITE ""
+  #define __CL_FG(color) ""
+  #define __CL_BG(color) ""
+#endif
 
 pthread_key_t __CLEnvKey;
 
@@ -74,9 +92,9 @@ void __cl_vappend(const char* format, va_list args) {
     cursor = strlen(env->output_buffer);
   }
   char* new_output = NULL;
-  size_t new_output_size = vasprintf(&new_output, format, args);
+  size_t new_output_size = vasprintf(&new_output, format, args) + 1;
   env->output_buffer = realloc(env->output_buffer, cursor + new_output_size);
-  strncpy(env->output_buffer + cursor, new_output, new_output_size + 1);
+  strncpy(env->output_buffer + cursor, new_output, new_output_size);
   free(new_output);
 }
 
@@ -208,6 +226,8 @@ do {                                                                         \
     env->num_passed_asserts++;                                               \
   }                                                                          \
 } while(0)                                                                   \
+
+#define cl_assert0(test) cl_assert(test, "")
 
 #define CL_SETUP                                                             \
 void __cl_setup_impl();                                                      \

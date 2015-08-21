@@ -284,20 +284,30 @@ void* __cl_spec(
   return NULL;
 }
 
-#define CL_SPEC(name)                                                        \
+#define CL_SPEC_FIXTURE_OPTIONS(name, setup, teardown, options)              \
 void __cl_spec_##name ();                                                    \
 void* name (__CLSpecEnv* env) {                                              \
-  return __cl_spec(#name, __cl_spec_##name, env, CL_OPTION_NONE);            \
+  __CLSetupType __cl_inner_setup = setup;                                    \
+  if (__cl_inner_setup) {                                                    \
+    __cl_inner_setup();                                                      \
+  }                                                                          \
+  void* value = __cl_spec(#name, __cl_spec_##name, env, options);            \
+  __CLSetupType __cl_inner_teardown = teardown;                              \
+  if (__cl_inner_teardown) {                                                 \
+    __cl_inner_teardown();                                                   \
+  }                                                                          \
+  return value;                                                              \
 }                                                                            \
 void __cl_spec_##name ()                                                     \
 
 #define CL_SPEC_OPTIONS(name, options)                                       \
-void __cl_spec_##name ();                                                    \
-void* name (__CLSpecEnv* env) {                                              \
-  return __cl_spec(#name, __cl_spec_##name, env, options);                   \
-}                                                                            \
-void __cl_spec_##name ()                                                     \
+CL_SPEC_FIXTURE_OPTIONS(name, NULL, NULL, options)                           \
 
+#define CL_SPEC_FIXTURE(name, setup, teardown)                               \
+CL_SPEC_FIXTURE_OPTIONS(name, setup, teardown, CL_OPTION_NONE)               \
+
+#define CL_SPEC(name)                                                        \
+CL_SPEC_OPTIONS(name, CL_OPTION_NONE)                                        \
 
 int __cl_main_parallel(
   int argc,

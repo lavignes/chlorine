@@ -226,8 +226,8 @@ do {                                                                         \
     env->num_failed_asserts++;                                               \
     /* Log the assert failure */                                             \
     __cl_error("Assertion Failed: " __CL_FG(__CL_RED) __CL_BOLD              \
-               "%s" __CL_RESET " in %s:%d\n" __CL_TAB __CL_TAB, #test,       \
-               __FILE__, __LINE__);                                          \
+               "%s\n" __CL_RESET __CL_TAB __CL_TAB "in %s:%d\n"              \
+               __CL_TAB __CL_TAB, #test, __FILE__, __LINE__);                \
     __cl_append(__CL_FG(__CL_BLUE));                                         \
     __cl_append(format, ##__VA_ARGS__);                                      \
     __cl_append(__CL_RESET "\n\n");                                          \
@@ -287,15 +287,16 @@ void* __cl_spec(
   double elapsed = __cl_time() - time_start;
   size_t passed = env->num_passed_asserts;
   size_t failed = env->num_failed_asserts;
+  size_t num_asserts = passed + failed;
   if (passed > 0 && failed == 0) {
-    __cl_pass("Passed SPEC in %.4f s -> " __CL_FG(__CL_RED) "%zu fail"
-      __CL_RESET ", " __CL_FG(__CL_GREEN) "%zu pass" __CL_RESET "\n\n",
-      elapsed, failed, passed);
+    __cl_pass("Passed SPEC in %.4f s -> " __CL_FG(__CL_GREEN) "%zu/%zu fail"
+      __CL_RESET ", " __CL_FG(__CL_GREEN) "%zu/%zu pass" __CL_RESET "\n\n",
+      elapsed, failed, num_asserts, passed, num_asserts);
   } else {
     env->failed = true;
-    __cl_fail("Failed SPEC in %.4f s -> " __CL_FG(__CL_RED) "%zu fail"
-      __CL_RESET ", " __CL_FG(__CL_GREEN) "%zu pass" __CL_RESET "\n\n",
-      elapsed, failed, passed);
+    __cl_fail("Failed SPEC in %.4f s -> " __CL_FG(__CL_RED) "%zu/%zu fail"
+      __CL_RESET ", " __CL_FG(__CL_RED) "%zu/%zu pass" __CL_RESET "\n\n",
+      elapsed, failed, num_asserts, passed, num_asserts);
   }
   __cl_append("======================================================\n\n");
   return NULL;
@@ -358,7 +359,9 @@ int __cl_main_parallel(
   size_t failed = 0;
   double time_start = __cl_time();
   __cl_print(__CL_BOLD __CL_FG(__CL_CYAN) "[INFO] " __CL_RESET
-             "Running BUNDLE: %s\n\n", filename);
+             "Running BUNDLE: %s\n", filename);
+  __cl_print(__CL_BOLD __CL_FG(__CL_CYAN) "[INFO] " __CL_RESET
+             "Using %zu threads\n\n", num_threads);
   if (__cl_setup_once) {
     __cl_setup_once();
   }
@@ -394,14 +397,20 @@ int __cl_main_parallel(
   }
   size_t passed = num_specs - failed;
   double elapsed = __cl_time() - time_start;
-  if (failed > 0) {
-    __cl_print(__CL_BOLD __CL_FG(__CL_RED) "[FAILURE] " __CL_RESET);
-  } else {
+
+  if (passed > 0 && failed == 0) {
     __cl_print(__CL_BOLD __CL_FG(__CL_GREEN) "[SUCCESS] " __CL_RESET);
+    __cl_print(__CL_FG(__CL_GREEN) "%zu/%zu SPECS failed" __CL_RESET ", "
+                       __CL_FG(__CL_GREEN) "%zu/%zu SPECS passed" __CL_RESET
+                       " in %.4f s\n\n", failed, num_specs,
+                                         passed, num_specs, elapsed);
+  } else {
+    __cl_print(__CL_BOLD __CL_FG(__CL_RED) "[FAILURE] " __CL_RESET);
+    __cl_print(__CL_FG(__CL_RED) "%zu/%zu SPECS failed" __CL_RESET ", "
+                       __CL_FG(__CL_RED) "%zu/%zu SPECS passed" __CL_RESET
+                       " in %.4f s\n\n", failed, num_specs,
+                                         passed, num_specs, elapsed);
   }
-  __cl_print(__CL_FG(__CL_RED) "%zu SPECS failed" __CL_RESET ", "
-             __CL_FG(__CL_GREEN) "%zu SPECS passed" __CL_RESET
-            " in %.4f s\n\n", failed, passed, elapsed);
   return failed;
 }
 
@@ -409,7 +418,7 @@ int __cl_main_parallel(
 int main(int argc, char** argv) {                                            \
   __CLSpecType specs[] = {__VA_ARGS__};                                      \
   size_t num_specs = sizeof(specs) / sizeof(__CLSpecType);                   \
-  return __cl_main_parallel(argc, argv, jobs, specs, num_specs, __FILE__);   \
+  return __cl_main_parallel(argc, argv, (jobs), specs, num_specs, __FILE__); \
 }                                                                            \
 
 #define CL_BUNDLE_PARALLEL(...)                                              \

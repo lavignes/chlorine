@@ -57,13 +57,22 @@ typedef struct __CLSpecEnv {
   size_t num_passed_asserts;
 } __CLSpecEnv;
 
+typedef void* (*__CLSpecType)(__CLSpecEnv *);
+
+typedef struct __CLWork {
+    __CLSpecType* specs;
+    __CLSpecEnv* envs;
+    size_t num_specs;
+    size_t index;
+    pthread_mutex_t lock;
+} __CLWork;
+
 typedef enum CLOptions {
-  CL_OPTION_NONE          = 0 << 0,
+  CL_OPTION_NONE          = 0,
   CL_OPTION_SKIP_SETUP    = 1 << 0,
-  CL_OPTION_SKIP_TEARDOWN = 2 << 0,
+  CL_OPTION_SKIP_TEARDOWN = 1 << 1,
 } CLOptions;
 
-typedef void* (*__CLSpecType)();
 typedef void (*__CLSetupType)();
 
 __CLSetupType __cl_setup;
@@ -294,8 +303,7 @@ void* __cl_spec(
 
 __CLSetupType __cl_fixture_CL_FIXTURE_NONE = NULL;
 
-#define CL_FIXTURE(name)                                                     \
-void __cl_fixture_##name ()                                                  \
+#define CL_FIXTURE(name) void __cl_fixture_##name ()
 
 #define CL_CALL_FIXTURE(name)                                                \
 __cl_fixture_##name()                                                        \
@@ -315,12 +323,32 @@ CL_SPEC_FIXTURE_OPTIONS(name, CL_FIXTURE_NONE, CL_FIXTURE_NONE, options)     \
 #define CL_SPEC_FIXTURE(name, setup, teardown)                               \
 CL_SPEC_FIXTURE_OPTIONS(name, setup, teardown, CL_OPTION_NONE)               \
 
-#define CL_SPEC(name)                                                        \
-CL_SPEC_OPTIONS(name, CL_OPTION_NONE)                                        \
+#define CL_SPEC(name) CL_SPEC_OPTIONS(name, CL_OPTION_NONE)
+
+void *__cl_do_work(void *ptr)
+{
+  __CLWork *work = ptr;
+  size_t index = 0;
+  while (true) {
+    pthread_mutex_lock(&work->lock);
+    index = work->index;
+    if (index == work->num_specs) {
+      pthread_mutex_unlock(&work->lock);
+      break;
+    }
+    work->index++;
+    pthread_mutex_unlock(&work->lock);
+    __CLSpecEnv *env = &work->envs[index];
+    __cl_env_init(env);
+    work->specs[index](env);
+  }
+  return NULL;
+}
 
 int __cl_main_parallel(
   int argc,
   char** argv,
+  size_t num_threads,
   __CLSpecType* specs,
   size_t num_specs,
   const char* filename)
@@ -330,20 +358,28 @@ int __cl_main_parallel(
   size_t failed = 0;
   double time_start = __cl_time();
   __cl_print(__CL_BOLD __CL_FG(__CL_CYAN) "[INFO] " __CL_RESET
-             "Running PARALLEL BUNDLE: %s\n\n", filename);
+             "Running BUNDLE: %s\n\n", filename);
   if (__cl_setup_once) {
     __cl_setup_once();
   }
-  /* TODO: Use a simple thread pool */
-  pthread_t* threads = malloc(sizeof(pthread_t) * num_specs);
-  __CLSpecEnv* envs = malloc(sizeof(__CLSpecEnv) * num_specs);
-  for (i = 0; i < num_specs; i++) {
-    __cl_env_init(&envs[i]);
-    pthread_create(&threads[i], NULL, specs[i], &envs[i]);
+  pthread_t* threads = malloc(sizeof(pthread_t) * num_threads);
+  __CLWork work = {
+          .specs = specs,
+          .envs = malloc(sizeof(__CLSpecEnv) * num_specs),
+          .num_specs = num_specs,
+          .index = 0
+  };
+  pthread_mutex_init(&work.lock, NULL);
+  for (i = 0; i < num_threads; i++) {
+    pthread_create(&threads[i], NULL, __cl_do_work, &work);
   }
-  for (i = 0; i < num_specs; i++) {
+  for (i = 0; i < num_threads; i++) {
     pthread_join(threads[i], NULL);
-    __CLSpecEnv *env = &envs[i];
+  }
+  free(threads);
+  pthread_mutex_destroy(&work.lock);
+  for (i = 0; i < num_specs; i++) {
+    __CLSpecEnv *env = &work.envs[i];
     if (env->output_buffer) {
       fprintf(stderr, "%s", env->output_buffer);
       free(env->output_buffer);
@@ -352,8 +388,7 @@ int __cl_main_parallel(
       failed++;
     }
   }
-  free(threads);
-  free(envs);
+  free(work.envs);
   if (__cl_teardown_once) {
     __cl_teardown_once();
   }
@@ -370,64 +405,21 @@ int __cl_main_parallel(
   return failed;
 }
 
-int __cl_main(
-  int argc,
-  char** argv,
-  __CLSpecType* specs,
-  size_t num_specs,
-  const char* filename)
-{
-  pthread_key_create(&__CLEnvKey, NULL);
-  size_t i;
-  size_t failed = 0;
-  double time_start = __cl_time();
-  __cl_print(__CL_BOLD __CL_FG(__CL_CYAN) "[INFO] " __CL_RESET
-             "Running BUNDLE: %s\n\n", filename);
-  if (__cl_setup_once) {
-    __cl_setup_once();
-  }
-  pthread_t thread;
-  __CLSpecEnv env;
-  for (i = 0; i < num_specs; i++) {
-    __cl_env_init(&env);
-    pthread_create(&thread, NULL, specs[i], &env);
-    pthread_join(thread, NULL);
-    if (env.output_buffer) {
-      fprintf(stderr, "%s", env.output_buffer);
-      free(env.output_buffer);
-      if (env.failed) {
-        failed++;
-      }
-    }
-  }
-  if (__cl_teardown_once) {
-    __cl_teardown_once();
-  }
-  size_t passed = num_specs - failed;
-  double elapsed = __cl_time() - time_start;
-  if (failed > 0) {
-    __cl_print(__CL_BOLD __CL_FG(__CL_RED) "[FAILURE] " __CL_RESET);
-  } else {
-    __cl_print(__CL_BOLD __CL_FG(__CL_GREEN) "[SUCCESS] " __CL_RESET);
-  }
-  __cl_print(__CL_FG(__CL_RED) "%zu SPECS failed" __CL_RESET ", "
-             __CL_FG(__CL_GREEN) "%zu SPECS passed" __CL_RESET
-             " in %.4f s\n\n", failed, passed, elapsed);
-  return failed;
-}
+#define CL_BUNDLE_PARALLEL_JOBS(jobs, ...)                                   \
+int main(int argc, char** argv) {                                            \
+  __CLSpecType specs[] = {__VA_ARGS__};                                      \
+  size_t num_specs = sizeof(specs) / sizeof(__CLSpecType);                   \
+  return __cl_main_parallel(argc, argv, jobs, specs, num_specs, __FILE__);   \
+}                                                                            \
 
 #define CL_BUNDLE_PARALLEL(...)                                              \
 int main(int argc, char** argv) {                                            \
   __CLSpecType specs[] = {__VA_ARGS__};                                      \
   size_t num_specs = sizeof(specs) / sizeof(__CLSpecType);                   \
-  return __cl_main_parallel(argc, argv, specs, num_specs, __FILE__);         \
+  size_t jobs = 4;                                                           \
+  return __cl_main_parallel(argc, argv, jobs, specs, num_specs, __FILE__);   \
 }                                                                            \
 
-#define CL_BUNDLE(...)                                                       \
-int main(int argc, char** argv) {                                            \
-  __CLSpecType specs[] = {__VA_ARGS__};                                      \
-  size_t num_specs = sizeof(specs) / sizeof(__CLSpecType);                   \
-  return __cl_main(argc, argv, specs, num_specs, __FILE__);                  \
-}                                                                            \
+#define CL_BUNDLE(...) CL_BUNDLE_PARALLEL_JOBS(1, __VA_ARGS__)
 
 #endif /* CHLORINE2 */

@@ -11,12 +11,10 @@ A more stable molecule.
   * It aims to be [thread-safe](#threading) and incredibly simple to use.
   
 ##Features
-  
-  ☑ Test suites (Use chlorine bundles)
 
   ☑ Tests run on seperate threads **(New in Cl<sub>2</sub>)**
   
-  ☐ Test pooling
+  ☑ Test pooling **(New in Cl<sub>2</sub>)**
   
   ☑ Non-fatal assertions **(New in Cl<sub>2</sub>)**
   
@@ -26,7 +24,6 @@ A more stable molecule.
 
   ☑ Test fixtures
 
-  ☐ Test timeouts
   
 ##Quickstart
 

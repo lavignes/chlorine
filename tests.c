@@ -25,7 +25,7 @@ CL_TEARDOWN
 
 CL_SPEC_OPTIONS (serial, CL_OPTION_SERIAL | CL_OPTION_SKIP_SETUP)
 {
-    cl_assert(cl_num_passed() == 0);
+    cl_assert(cl_num_passed() == 0, "This would fail if we didn't skip setup :)");
     cl_assert(cl_num_passed() == 1);
     cl_assert(cl_num_passed() == 2);
     cl_assert(cl_num_passed() == 3);

@@ -2,7 +2,7 @@
   Thats right... Chlorine's tests are written with chlorine!
 */
 
-#include <chlorine.h>
+#include "chlorine.h"
 
 CL_SETUP_ONCE
 {

@@ -69,11 +69,33 @@ typedef struct __CLWork {
     pthread_mutex_t lock;
 } __CLWork;
 
+/**
+ * Options used when building a CL_SPEC.
+ */
 typedef enum CLOptions {
   CL_OPTION_NONE          = 0,
+
+  /**
+   * The SPEC will skip its setup fixture, even it doesn't
+   * use the default setup fixture (CL_SETUP).
+   */
   CL_OPTION_SKIP_SETUP    = 1 << 0,
+
+  /**
+   * The SPEC will skip its teardown fixture, even it doesn't
+   * use the default teardown fixture (CL_TEARDOWN).
+   */
   CL_OPTION_SKIP_TEARDOWN = 1 << 1,
+
+  /**
+   * The SPEC will skip setup and teardown.
+   */
   CL_OPTION_SKIP_SETUP_AND_TEARDOWN = CL_OPTION_SKIP_SETUP | CL_OPTION_SKIP_TEARDOWN,
+
+  /**
+   * The SPEC will run in serial, after all parallel SPECS have ran, regardless
+   * of the number of parallel jobs in the bundle.
+   */
   CL_OPTION_SERIAL        = 1 << 2,
 } CLOptions;
 
@@ -126,6 +148,9 @@ void __cl_print(const char* format, ...) {
   va_end(args);
 }
 
+/**
+ * Return the SPEC-specific custom pointer set using cl_set_userdata().
+ */
 void* cl_get_userdata() {
   __CLSpecEnv* env = __cl_env();
   if (!env) {
@@ -137,6 +162,9 @@ void* cl_get_userdata() {
   return env->userdata;
 }
 
+/**
+ * Set the SPEC-specific custom pointer. Get it with cl_get_userdata().
+ */
 void cl_set_userdata(void* userdata) {
   __CLSpecEnv* env = __cl_env();
   if (!env) {
@@ -148,6 +176,9 @@ void cl_set_userdata(void* userdata) {
   env->userdata = userdata;
 }
 
+/**
+ * Return the number of passed assertions so far in the SPEC.
+ */
 size_t cl_num_passed() {
   __CLSpecEnv* env = __cl_env();
   if (!env) {
@@ -159,6 +190,9 @@ size_t cl_num_passed() {
   return env->num_passed_asserts;
 }
 
+/**
+ * Return the number of failed assertions so far in the SPEC.
+ */
 size_t cl_num_failed() {
   __CLSpecEnv* env = __cl_env();
   if (!env) {
@@ -170,6 +204,9 @@ size_t cl_num_failed() {
   return env->num_failed_asserts;
 }
 
+/**
+ * Return the name of the SPEC as a string.
+ */
 const char* cl_get_name() {
   __CLSpecEnv* env = __cl_env();
   if (!env) {
@@ -181,6 +218,9 @@ const char* cl_get_name() {
   return env->test_name;
 }
 
+/**
+ * Return whether the SPEC has failed.
+ */
 bool cl_has_failed() {
   __CLSpecEnv* env = __cl_env();
   if (!env) {
@@ -239,6 +279,9 @@ double __cl_time() {
   return (double) t.tv_sec + t.tv_usec / 1000000.0;
 }
 
+/**
+ * Write a message to the SPEC's log.
+ */
 #define cl_log(format, ...)                                                  \
 do {                                                                         \
   if (!__cl_env()) {                                                         \
@@ -250,6 +293,9 @@ do {                                                                         \
   __cl_log(format, ##__VA_ARGS__);                                           \
 } while (0)                                                                  \
 
+/**
+ * Force a SPEC to fail and exit.
+ */
 #define cl_abort()                                                           \
 do {                                                                         \
   __CLSpecEnv* env = __cl_env();                                             \
@@ -264,6 +310,9 @@ do {                                                                         \
   pthread_exit(NULL);                                                        \
 } while(0)                                                                   \
 
+/**
+ * Return false if the running SPEC was created using CL_OPTION_SERIAL.
+ */
 bool cl_is_parallel() {
   __CLSpecEnv* env = __cl_env();
   if (!env) {
@@ -275,6 +324,9 @@ bool cl_is_parallel() {
   return !env->serial_pass;
 }
 
+/**
+ * Assert an expression is true, and print a message if the test fails.
+ */
 #define cl_assert_msg(test, format, ...)                                     \
 do {                                                                         \
   __CLSpecEnv* env = __cl_env();                                             \
@@ -296,23 +348,42 @@ do {                                                                         \
   }                                                                          \
 } while(0)                                                                   \
 
+/**
+ * Assert an expression is true.
+ */
 #define cl_assert(test) cl_assert_msg(test, "")
 
+/**
+ * The default fixture that is run repeatedly before every test.
+ */
 #define CL_SETUP                                                             \
 void __cl_setup_impl();                                                      \
 __CLSetupType __cl_setup = __cl_setup_impl;                                  \
 void __cl_setup_impl()                                                       \
 
+/**
+ * The default fixture that is run repeatedly after every test.
+ */
 #define CL_TEARDOWN                                                          \
 void __cl_teardown_impl();                                                   \
 __CLSetupType __cl_teardown = __cl_teardown_impl;                            \
 void __cl_teardown_impl()                                                    \
 
+/**
+ * A fixture ran once before all tests. You should not call any
+ * cl_* functions from this fixture. If you do, an error will be added
+ * to the log.
+ */
 #define CL_SETUP_ONCE                                                        \
 void __cl_setup_once_impl();                                                 \
 __CLSetupType __cl_setup_once = __cl_setup_once_impl;                        \
 void __cl_setup_once_impl()                                                  \
 
+/**
+ * A fixture ran once after all tests. You should not call any
+ * cl_* functions from this fixture. If you do, an error will be added
+ * to the log.
+ */
 #define CL_TEARDOWN_ONCE                                                     \
 void __cl_teardown_once_impl();                                              \
 __CLSetupType __cl_teardown_once = __cl_teardown_once_impl;                  \
@@ -371,11 +442,20 @@ void* __cl_spec(
 
 __CLSetupType __cl_fixture_CL_FIXTURE_NONE = NULL;
 
+/**
+ * Define a custom fixture.
+ */
 #define CL_FIXTURE(name) void __cl_fixture_##name ()
 
+/**
+ * Call a fixture from any SPEC.
+ */
 #define CL_CALL_FIXTURE(name)                                                \
 __cl_fixture_##name()                                                        \
 
+/**
+ * Define a SPEC with custom fixtures and options.
+ */
 #define CL_SPEC_FIXTURE_OPTIONS(name, setup, teardown, options)              \
 void __cl_spec_##name ();                                                    \
 void* name (__CLSpecEnv* env) {                                              \
@@ -385,12 +465,21 @@ void* name (__CLSpecEnv* env) {                                              \
 }                                                                            \
 void __cl_spec_##name ()                                                     \
 
+/**
+ * Define a SPEC with options.
+ */
 #define CL_SPEC_OPTIONS(name, options)                                       \
 CL_SPEC_FIXTURE_OPTIONS(name, CL_FIXTURE_NONE, CL_FIXTURE_NONE, options)     \
 
+/**
+ * Define a SPEC with custom fixtures.
+ */
 #define CL_SPEC_FIXTURE(name, setup, teardown)                               \
 CL_SPEC_FIXTURE_OPTIONS(name, setup, teardown, CL_OPTION_NONE)               \
 
+/**
+ * Define a SPEC.
+ */
 #define CL_SPEC(name) CL_SPEC_OPTIONS(name, CL_OPTION_NONE)
 
 void *__cl_do_work(void *ptr)
@@ -488,6 +577,9 @@ int __cl_main_parallel(
   return failed;
 }
 
+/**
+ * Create a SPEC bundle with a custom job pool size.
+ */
 #define CL_BUNDLE_PARALLEL_JOBS(jobs, ...)                                   \
 int main(int argc, char** argv) {                                            \
   __CLSpecType specs[] = {__VA_ARGS__};                                      \
@@ -495,8 +587,14 @@ int main(int argc, char** argv) {                                            \
   return __cl_main_parallel(argc, argv, (jobs), specs, num_specs, __FILE__); \
 }                                                                            \
 
+/**
+ * Create a SPEC bundle with a sane job pool size.
+ */
 #define CL_BUNDLE_PARALLEL(...) CL_BUNDLE_PARALLEL_JOBS(4, __VA_ARGS__)
 
+/**
+ * Create a SPEC bundle with a job pool size of 1.
+ */
 #define CL_BUNDLE(...) CL_BUNDLE_PARALLEL_JOBS(1, __VA_ARGS__)
 
 #endif /* CHLORINE2 */

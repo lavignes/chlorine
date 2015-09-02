@@ -50,6 +50,7 @@ pthread_key_t __CLEnvKey;
 
 typedef struct __CLSpecEnv {
   void* userdata;
+  bool serial_pass;
   bool failed;
   char* test_name;
   char* output_buffer;
@@ -64,6 +65,7 @@ typedef struct __CLWork {
     __CLSpecEnv* envs;
     size_t num_specs;
     size_t index;
+    bool serial_pass;
     pthread_mutex_t lock;
 } __CLWork;
 
@@ -71,6 +73,8 @@ typedef enum CLOptions {
   CL_OPTION_NONE          = 0,
   CL_OPTION_SKIP_SETUP    = 1 << 0,
   CL_OPTION_SKIP_TEARDOWN = 1 << 1,
+  CL_OPTION_SKIP_SETUP_AND_TEARDOWN = CL_OPTION_SKIP_SETUP | CL_OPTION_SKIP_TEARDOWN,
+  CL_OPTION_SERIAL        = 1 << 2,
 } CLOptions;
 
 typedef void (*__CLSetupType)();
@@ -82,6 +86,7 @@ __CLSetupType __cl_teardown_once;
 
 void __cl_env_init(__CLSpecEnv* env) {
   env->userdata = NULL;
+  env->serial_pass = false;
   env->failed = false;
   env->test_name = NULL;
   env->output_buffer = malloc(16);
@@ -141,6 +146,50 @@ void cl_set_userdata(void* userdata) {
     return;
   }
   env->userdata = userdata;
+}
+
+size_t cl_num_passed() {
+  __CLSpecEnv* env = __cl_env();
+  if (!env) {
+    __cl_print(__CL_BOLD __CL_FG(__CL_YELLOW) "[ERROR] " __CL_RESET
+                       "Detecting call to cl_num_passed() from outside the scope "
+                       "of a SPEC\n\n");
+    return 0;
+  }
+  return env->num_passed_asserts;
+}
+
+size_t cl_num_failed() {
+  __CLSpecEnv* env = __cl_env();
+  if (!env) {
+    __cl_print(__CL_BOLD __CL_FG(__CL_YELLOW) "[ERROR] " __CL_RESET
+                       "Detecting call to cl_num_passed() from outside the scope "
+                       "of a SPEC\n\n");
+    return 0;
+  }
+  return env->num_failed_asserts;
+}
+
+const char* cl_get_name() {
+  __CLSpecEnv* env = __cl_env();
+  if (!env) {
+    __cl_print(__CL_BOLD __CL_FG(__CL_YELLOW) "[ERROR] " __CL_RESET
+                       "Detecting call to cl_get_name() from outside the scope "
+                       "of a SPEC\n\n");
+    return NULL;
+  }
+  return env->test_name;
+}
+
+bool cl_has_failed() {
+  __CLSpecEnv* env = __cl_env();
+  if (!env) {
+    __cl_print(__CL_BOLD __CL_FG(__CL_YELLOW) "[ERROR] " __CL_RESET
+                       "Detecting call to cl_has_failed() from outside the scope "
+                       "of a SPEC\n\n");
+    return false;
+  }
+  return env->failed;
 }
 
 void __cl_info(const char* format, ...) {
@@ -215,7 +264,18 @@ do {                                                                         \
   pthread_exit(NULL);                                                        \
 } while(0)                                                                   \
 
-#define cl_assert(test, format, ...)                                         \
+bool cl_is_parallel() {
+  __CLSpecEnv* env = __cl_env();
+  if (!env) {
+    __cl_print(__CL_BOLD __CL_FG(__CL_YELLOW) "[ERROR] " __CL_RESET
+                       "Detecting call to cl_is_parallel() from outside the scope "
+                       "of a SPEC\n\n");
+    return false;
+  }
+  return !env->serial_pass;
+}
+
+#define cl_assert_msg(test, format, ...)                                     \
 do {                                                                         \
   __CLSpecEnv* env = __cl_env();                                             \
   if (!env) {                                                                \
@@ -236,7 +296,7 @@ do {                                                                         \
   }                                                                          \
 } while(0)                                                                   \
 
-#define cl_assert0(test) cl_assert(test, "")
+#define cl_assert(test) cl_assert_msg(test, "")
 
 #define CL_SETUP                                                             \
 void __cl_setup_impl();                                                      \
@@ -266,6 +326,13 @@ void* __cl_spec(
   __CLSetupType teardown,
   CLOptions options)
 {
+  if (options & CL_OPTION_SERIAL) {
+    if (!env->serial_pass) {
+      return NULL;
+    }
+  } else if (env->serial_pass) {
+    return NULL;
+  }
   env->test_name = (char *) name;
   pthread_setspecific(__CLEnvKey, env);
   __cl_info("Executing SPEC => " __CL_FG(__CL_CYAN) __CL_BOLD
@@ -288,7 +355,7 @@ void* __cl_spec(
   size_t passed = env->num_passed_asserts;
   size_t failed = env->num_failed_asserts;
   size_t num_asserts = passed + failed;
-  if (passed > 0 && failed == 0) {
+  if (failed == 0) {
     __cl_pass("Passed SPEC in %.4f s -> " __CL_FG(__CL_GREEN) "%zu/%zu fail"
       __CL_RESET ", " __CL_FG(__CL_GREEN) "%zu/%zu pass" __CL_RESET "\n\n",
       elapsed, failed, num_asserts, passed, num_asserts);
@@ -340,7 +407,10 @@ void *__cl_do_work(void *ptr)
     work->index++;
     pthread_mutex_unlock(&work->lock);
     __CLSpecEnv *env = &work->envs[index];
-    __cl_env_init(env);
+    if (!work->serial_pass) {
+      __cl_env_init(env);
+    }
+    env->serial_pass = work->serial_pass;
     work->specs[index](env);
   }
   return NULL;
@@ -370,7 +440,8 @@ int __cl_main_parallel(
           .specs = specs,
           .envs = malloc(sizeof(__CLSpecEnv) * num_specs),
           .num_specs = num_specs,
-          .index = 0
+          .index = 0,
+          .serial_pass = false,
   };
   pthread_mutex_init(&work.lock, NULL);
   for (i = 0; i < num_threads; i++) {
@@ -380,6 +451,9 @@ int __cl_main_parallel(
     pthread_join(threads[i], NULL);
   }
   free(threads);
+  work.index = 0;
+  work.serial_pass = true;
+  __cl_do_work(&work);
   pthread_mutex_destroy(&work.lock);
   for (i = 0; i < num_specs; i++) {
     __CLSpecEnv *env = &work.envs[i];
@@ -421,13 +495,7 @@ int main(int argc, char** argv) {                                            \
   return __cl_main_parallel(argc, argv, (jobs), specs, num_specs, __FILE__); \
 }                                                                            \
 
-#define CL_BUNDLE_PARALLEL(...)                                              \
-int main(int argc, char** argv) {                                            \
-  __CLSpecType specs[] = {__VA_ARGS__};                                      \
-  size_t num_specs = sizeof(specs) / sizeof(__CLSpecType);                   \
-  size_t jobs = 4;                                                           \
-  return __cl_main_parallel(argc, argv, jobs, specs, num_specs, __FILE__);   \
-}                                                                            \
+#define CL_BUNDLE_PARALLEL(...) CL_BUNDLE_PARALLEL_JOBS(4, __VA_ARGS__)
 
 #define CL_BUNDLE(...) CL_BUNDLE_PARALLEL_JOBS(1, __VA_ARGS__)
 
